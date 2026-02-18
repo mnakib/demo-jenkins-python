@@ -6,7 +6,7 @@ pipeline {
         DOCKER_HUB = credentials('docker-hub-credentials')
     }
     stages {
-        stage('Checkout') {
+        stage('Checkout Source') {
             steps {
                 // 1. Pull the code from your repository
                 git branch: 'main', url: 'https://github.com/mnakib/demo-jenkins-python.git'
