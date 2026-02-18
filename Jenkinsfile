@@ -1,68 +1,34 @@
 pipeline {
     agent any
-
     environment {
-        // Replace with your Docker Hub username
-        DOCKER_HUB_USER = 'your-username'
+        PATH = "/opt/homebrew/bin:/usr/local/bin:${env.PATH}"
         IMAGE_NAME = "python-flask-app"
-        DOCKER_IMAGE = 'python-flask-app'
-        DOCKER_HUB_CREDS = credentials('docker-hub-credentials')
+        DOCKER_HUB = credentials('docker-hub-credentials')
     }
-
     stages {
         stage('Checkout') {
             steps {
-                // Cloning the specific branch
-                git branch: 'main', url: 'https://github.com/mouradn81/demo-jenkins-python.git'
+                // 1. Pull the code from your repository
+                git branch: 'main', url: 'https://github.com/mnakib/demo-jenkins-python.git'
             }
         }
-
         stage('Build & Test') {
             steps {
-                script {
-                    // Using a python docker container to keep the Jenkins agent clean
-                    docker.image('python:3.9-slim').inside {
-                        sh '''
-                            pip install flask pytest
-                            pytest
-                        '''
-                    }
-                }
+                // Instead of docker.inside, we run a container manually
+                sh '''
+                    docker run --rm -v $(pwd):/app -w /app python:3.9-slim bash -c "
+                        pip install flask pytest && 
+                        pytest
+                    "
+                '''
             }
         }
-
-        stage('Build Docker Image') {
-            when {
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
-            }
+        stage('Build & Push') {
             steps {
-                script {
-                    // Builds the image using the Dockerfile in your repo
-                    appImage = docker.build("${DOCKER_HUB_USER}/${IMAGE_NAME}:${env.BUILD_NUMBER}")
-                    appImage.push()
-                    appImage.push('latest')
-                }
+                sh "docker build -t ${DOCKER_HUB_USR}/${IMAGE_NAME}:latest ."
+                sh "echo $DOCKER_HUB_PSW | docker login -u $DOCKER_HUB_USR --password-stdin"
+                sh "docker push ${DOCKER_HUB_USR}/${IMAGE_NAME}:latest"
             }
-        }
-
-        stage('Push to Docker Hub') {
-            steps {
-                script {
-                    docker.withRegistry('https://index.docker.io/v1/', 'docker-hub-credentials') {
-                        appImage.push()
-                        appImage.push('latest')
-                    }
-                }
-            }
-        }
-    }
-
-    post {
-        always {
-            cleanWs()
-        }
-        failure {
-            echo "Pipeline failed. Check the test logs or Docker credentials."
         }
     }
 }
