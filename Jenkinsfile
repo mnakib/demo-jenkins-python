@@ -1,9 +1,11 @@
 pipeline {
     agent any
     environment {
-        PATH = "/opt/homebrew/bin:/usr/local/bin:${env.PATH}"
-        IMAGE_NAME = "python-flask-app"
-        DOCKER_HUB = credentials('docker-hub-credentials')
+        // The DOCKER_HUB instructuion replaces both DOCKER_HUB_USER and REGISTRY_CREDENTIALS_ID
+        DOCKER_HUB = credentials('docker-hub-creds')
+        IMAGE_NAME = "python-jenkins-demo"
+        // Define the ID here so you can reuse it easily
+        REGISTRY_ID = 'docker-hub-creds'
     }
     stages {
         stage('Checkout Source') {
@@ -25,9 +27,9 @@ pipeline {
         }
         stage('Build & Push') {
             steps {
-                sh "docker build -t ${DOCKER_HUB_USR}/${IMAGE_NAME}:latest ."
-                sh "echo $DOCKER_HUB_PSW | docker login -u $DOCKER_HUB_USR --password-stdin"
-                sh "docker push ${DOCKER_HUB_USR}/${IMAGE_NAME}:latest"
+                sh "docker build -t ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest ."
+                sh "echo $DOCKER_HUB_PSW | docker login -u $DOCKER_HUB_USER --password-stdin"
+                sh "docker push ${DOCKER_HUB_USER}/${IMAGE_NAME}:latest"
             }
         }
     }
