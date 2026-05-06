@@ -47,12 +47,12 @@ sudo docker run hello-world
 
 ### 0.2 Install Jenkins
 
-__Add the Jenkins Repository 
+__Add the Jenkins Repository__ 
 
 Download the repo file
 
 ```bash
-sudo wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.rep
+sudo wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
 ```
 
 Import the GPG key
@@ -67,7 +67,14 @@ __Install Java and Jenkins__
 Install dependencies:
 
 ```bash
-sudo dnf install fontconfig java-17-openjdk -y
+sudo dnf install fontconfig java-21-openjdk -y
+```
+
+Run `java -version`. If it still shows an older version (like Java 11 or 17), you may need to update the system default:
+
+```bash
+# Choose the index indicating the correct version
+sudo update-alternatives --config java
 ```
 
 Install Jenkins
@@ -256,7 +263,7 @@ pipeline {
 }
 ```
 
-### 0.6 Commit and push to GitHub
+### 0.7 Commit and push to GitHub
 
 Stage and commit your files
 
@@ -565,10 +572,6 @@ pipeline {
     }
 }
 ```
-
-
-
-
 
 
 
