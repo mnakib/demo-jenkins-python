@@ -28,8 +28,16 @@ sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker
 sudo dnf install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 ```bash
-# Add the jenkins user to the docker group. This allows it to run Docker command without needins sudo
+# Add the jenkins user to the docker group. This allows it to run Docker command without needins sudo.
 sudo usermod -aG docker jenkins
+
+# Add your user to the docker group. This allows you to run Docker command without needins sudo.
+sudo usermod -aG docker ${whoami}
+
+# Run the newgrp command to change the current active user group (effective GID) within a session.
+newgrp docker
+
+
 
 # Sometimes the socket itself needs a permissions nudge to recognize the new group membership immediately
 sudo chmod 666 /var/run/docker.sock
@@ -129,6 +137,12 @@ Initialize the local repository. Using `-b main` sets your default branch name t
 git init -b main
 ```
 
+Check the current state of the repository
+
+```bash
+git status
+```
+
 Stage and commit your files
 
 ```bash
@@ -139,15 +153,25 @@ git commit -m "Initial commit"
 
 ### 0.4 Create a new repository on GitHub and link the local repo to it
 
-Create a new repository on GitHub. For instance, `python-jenkins-demo`.
+__Create a new repository on GitHub__
+
+On [GitHub](https://github.com/), create a new repo, for instance, `jenkins-demo` or any other name suitable for you.
 __Do not__ initialize it with a README, license, or `.gitignore` file yet to avoid merge conflicts.
 
-Link the local repo to GitHub
+__Link the local repo to GitHub__
 
 Copy the remote repository URL from GitHub's "Quick Setup" page and add it as a remote named __"origin"__.
 
+On your terminal, initialize variables specific to your environment
+
 ```bash
-git remote add origin https://github.com/USERNAME/REPOSITORY-NAME.git
+# Initialize variables specific to your environment
+GITHUB_USERNAME=<YOUR_GITHUB_USERNAME>
+GITHUB_REPOSITORY_NAME=<YOUR_REPOSITORY_NAME>
+```
+```bash
+git remote add origin \
+  https://github.com/${GITHUB_USERNAME}/${GITHUB_REPOSITORY_NAME}.git
 ```
 
 
@@ -178,7 +202,7 @@ EOF
 
 #### 0.5.2 The Test `test.py` file
 ```python
-cat > test.py << EOF
+cat > _test.py << EOF
 
 import pytest
 from app import app
@@ -212,7 +236,7 @@ EOF
 #### 0.5.4 The `Dockerfile`
 
 ```Dockerfile
-cat > Containerfile << EOF
+cat > Dockerfile << EOF
 
 FROM python:3.8
 WORKDIR /app
@@ -232,17 +256,22 @@ EOF
 Create the Jenkins pipeline file. This file must be called `Jenkinsfile` and it defines the "DevOps steps": pulling code, setting up Python, and running tests.
 
 ```groovy
+cat > Jenkinsfile << EOF
+
 pipeline {
     agent any
     environment {
         IMAGE_NAME = "python-flask-app"
-        DOCKER_HUB = credentials('docker-hub-credentials')
+        DOCKER_HUB = credentials('docker-hub-creds')
+        // Change GITHUB_USERNAME & GITHUB_REPOSITORY_NAME values accordingly
+        GITHUB_USERNAME="<YOUR_GITHUB_USERNAME>"
+        GITHUB_REPOSITORY_NAME="<YOUR_REPOSITORY_NAME>"
     }
     stages {
         stage('Checkout Source') {
             steps {
                 // Pull the code from your repository
-                git branch: 'main', url: 'https://github.com/mnakib/demo-jenkins-python.git'
+                git branch: 'main', url: "https://github.com/${GITHUB_USERNAME}/${GITHUB_REPOSITORY_NAME}.git"
             }
         }
         stage('Build & Test') {
@@ -265,6 +294,8 @@ pipeline {
         }
     }
 }
+
+EOF
 ```
 
 ### 0.7 Commit and push to GitHub
@@ -273,12 +304,16 @@ Stage and commit your files
 
 ```bash
 git add .
-git commit -m "Initial commit"
+git commit -m "Required files added - app, test, requirements, Dockerfile, Jenkinsfile"
 ```
 
 Push to GitHub
 
 ```bash
+# Optional - Temporarily store your HTTPS credentials in memory - default timeout is 15 minutes. This can be be changed with the 'cache --timeout=3600' option
+git config --global credential.helper cache
+
+# Push your changes to the main branch
 git push -u origin main
 ```
 
@@ -292,8 +327,14 @@ git push -u origin main
 
 You must provide Jenkins with credentials to access your GitHub repositories, especially for private ones. 
 
+### 3.2 Configure Jenkins with Docker Hub Registry Credentials
 
+So that Jenkins is able to push images to an image registry, like Docker Hub, Amazon ECR, or a private registry, you need to add the registry credentials of the specific registry you intend to use.
 
+- Go to **Manage Jenkins > Credentials > System > Global credentials**.
+- **Add Your Details:** Click **Add Credentials**, select **Username with password**, and enter your Docker Hub username and password (or Access Token).
+- **Define the ID:** In the ID field, type a name: `docker-hub-creds`.
+- **Update Your Code:** Use that exact name in your pipeline. That is the  which is `DOCKER_HUB = credentials('docker-hub-creds')`
 
 ### 3.2 Configure the Pipeline
 
@@ -304,10 +345,8 @@ You must provide Jenkins with credentials to access your GitHub repositories, es
 * Select **Pipeline** and click OK.
 4. **Connect GitHub:**
 * Scroll to the **Pipeline** section.
-* Change "Definition" to **Pipeline script from SCM**.
-* Select **Git**.
-* Paste your **GitHub Repository URL**.
-* Ensure the branch is correct (usually `*/main`).
+* Change "Definition" to **Pipeline script**.
+* In the **script** section, copy and paste the Jenkinsfile file content.
 * Click **Save**.
 
 
@@ -316,10 +355,54 @@ You must provide Jenkins with credentials to access your GitHub repositories, es
 Click **Build Now** on the left menu. Jenkins will:
 
 1. **Clone** your code from GitHub.
-2. **Execute** the `sh 'python3 app.py'` command defined in your `Jenkinsfile`.
-3. **Report** success or failure in the **Stage View** dashboard.
+2. **Run** the `python:3.9-slim bash` container and install the `flask` and `pytest` packages.
+3. **Execute** the `pytest` command for running the test against the running flask `app` application.
+4. **Build** an image using the Dockerfile instructions, tagging it as docker.io/<IMAGE_REPOSITORY_USERNAME>/python-flask-app:latest
+5. **Push** the resulting image to the Docker Hub image registry.
+---
+
+
+## 5. Check the image
+
+Check that the image was pused successfully to the Docker Hub registry.
+
+```bash
+# Initialize the IMAGE_REPOSITORY_USERNAME variable
+IMAGE_REPOSITORY_USERNAME=mouradn81
+
+# Check the image existence in Docker Hub using the skopeo command
+skopeo inspect docker://docker.io/${IMAGE_REPOSITORY_USERNAME}/python-flask-app:latest
+```
+
+Run a Docker container from the resulting image and verify it runs successully
+
+```bash
+docker run --name flask-app -d -p 5000:5000 docker.io/${IMAGE_REPOSITORY_USERNAME}/python-flask-app:latest
+```
+
+```bash
+curl localhost:5000
+```
+```text
+<p>Hello, World!</p>
+```
+
+
+
+
+
+
+
 
 ---
+
+
+
+
+
+
+
+
 
 ## 5. What's the "Next Step" in the DevOps Lifecycle?
 
@@ -576,6 +659,40 @@ pipeline {
     }
 }
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### 3.2 Configure the Pipeline
+
+1. **Open Jenkins:** Go to `http://localhost:8080` in your browser.
+2. **Unlock:** Paste the password from the logs and select **"Install Suggested Plugins."**
+3. **Create Job:** * Click **New Item**.
+* Enter name: `Python-App-Pipeline`.
+* Select **Pipeline** and click OK.
+4. **Connect GitHub:**
+* Scroll to the **Pipeline** section.
+* Change "Definition" to **Pipeline script from SCM**.
+* Select **Git**.
+* Paste your **GitHub Repository URL**.
+* Ensure the branch is correct (usually `*/main`).
+* Click **Save**.
+
+
+
+
+
+
 
 
 
