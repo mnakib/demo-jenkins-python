@@ -158,10 +158,9 @@ git remote add origin https://github.com/USERNAME/REPOSITORY-NAME.git
 
 Create the Python application file, named `app.py`, containing a simple calculator script with a built-in test.
 
-```bash
-cat > app.py
-```
 ```python
+cat > app.py << EOF
+
 from flask import Flask
 
 app = Flask(__name__)
@@ -172,14 +171,15 @@ def hello_world():
 
 if __name__ == "__main__":
     app.run(debug=True, host='0.0.0.0', port=5000)
+
+EOF
 ```
 
 
 #### 0.5.2 The Test `test.py` file
-```bash
-cat > test.py
-```
 ```python
+cat > test.py << EOF
+
 import pytest
 from app import app
 
@@ -194,24 +194,26 @@ def test_app_is_working(client):
     response = client.get('/')
     assert response.status_code == 200
     assert b"Hello, World!" in response.data
+
+EOF
 ```
 
 #### 0.5.3 The `requirements.txt` file
 
-```bash
-cat > requirements.txt
-```
 ```text
+cat > requirements.txt << EOF
+
 Flask==2.2.3
 pytest>=5.0.0
+
+EOF
 ```
 
 #### 0.5.4 The `Dockerfile`
 
-```bash
-cat > Dockerfile
-```
 ```Dockerfile
+cat > Containerfile << EOF
+
 FROM python:3.8
 WORKDIR /app
 COPY . /app
@@ -219,6 +221,8 @@ RUN pip install flask
 EXPOSE 8080
 ENTRYPOINT ["python"]
 CMD ["app.py"]
+
+EOF
 ```
 
 
@@ -572,6 +576,7 @@ pipeline {
     }
 }
 ```
+
 
 
 
