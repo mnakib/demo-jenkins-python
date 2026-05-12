@@ -263,7 +263,7 @@ pipeline {
         DOCKER_HUB = credentials('docker-hub-creds')
         // Change GITHUB_USERNAME & GITHUB_REPOSITORY_NAME values accordingly
         GITHUB_USERNAME="mnakib"
-        GITHUB_REPOSITORY_NAME="jenkins-demo-bis"
+        GITHUB_REPOSITORY_NAME="jenkins-demo"
     }
     stages {
         stage('Checkout Source') {
