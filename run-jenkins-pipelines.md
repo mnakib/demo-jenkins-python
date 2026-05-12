@@ -28,9 +28,6 @@ sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker
 sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 ```bash
-# Add the jenkins user to the docker group. This allows it to run Docker command without needins sudo.
-sudo usermod -aG docker jenkins
-
 # Add your user to the docker group. This allows you to run Docker command without needins sudo.
 sudo usermod -aG docker ${whoami}
 
@@ -90,6 +87,18 @@ Install Jenkins
 ```bash
 sudo dnf install jenkins -y 
 ```
+
+```bash
+# Add the jenkins user to the docker group. This allows it to run Docker command without needins sudo.
+sudo usermod -aG docker jenkins
+
+# Run the newgrp command to change the current active user group (effective GID) within a session.
+newgrp docker
+
+# Sometimes the socket itself needs a permissions nudge to recognize the new group membership immediately
+sudo chmod 666 /var/run/docker.sock
+```
+
 
 __Start and Enable Jenkins__
 
