@@ -9,7 +9,7 @@ This guide follows the "Pipeline as Code" philosophy, where your automation step
 Instructions for [installing Docker](https://docs.docker.com/engine/install/rhel/) are found [here](https://docs.docker.com/engine/install/rhel/)
 
 ```bash
-sudo dnf remove docker \
+sudo dnf remove -y docker \
     docker-client \
     docker-client-latest \
     docker-common \
@@ -18,7 +18,7 @@ sudo dnf remove docker \
     docker-logrotate \
     docker-engine \
     podman \
-    runc -y
+    runc
 ```
 ```bash
 sudo dnf -y install dnf-plugins-core
