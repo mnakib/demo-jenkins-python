@@ -33,9 +33,6 @@ sudo usermod -aG docker ${whoami}
 
 # Run the newgrp command to change the current active user group (effective GID) within a session.
 newgrp docker
-
-# Sometimes the socket itself needs a permissions nudge to recognize the new group membership immediately
-sudo chmod 666 /var/run/docker.sock
 ```
 ```bash
 # Enable and start docker service
@@ -73,11 +70,7 @@ Install dependencies:
 sudo dnf install fontconfig java-21-openjdk -y
 ```
 
-Run `java -version`. If it still shows an older version (like Java 11 or 17), you may need to update the system default:
-
-```bash
-# Choose the index indicating the correct version
-sudo update-alternatives --config java
+    > Run `java -version`. If it still shows an older version (like Java 11 or 17), you may need to update the system default by running the `sudo update-alternatives --config java` command and choose the appropriate version, which is in this case version 21.
 ```
 
 Install Jenkins
@@ -105,7 +98,7 @@ __Start and Enable Jenkins__
 sudo systemctl daemon-reload
 
 # Start and enable the service
-sudo systemctl start jenkins
+sudo systemctl enable --now jenkins
 ```
 
 __Configure Firewall__
@@ -135,7 +128,8 @@ Paste this password into the browser to unlock the setup. Select __"Install sugg
 Create a working directory
 
 ```bash
-mkdir python-jenkins-demo && cd python-jenkins-demo
+WORKING_DIR=jenkins-demo
+mkdir ${WORKING_DIR} && cd ${WORKING_DIR}
 ```
 
 Initialize the local repository. Using `-b main` sets your default branch name to __"main"__
@@ -257,22 +251,19 @@ EOF
 ```
 
 
-
 ### 0.6 Create the Pipeline `Jenkinsfile`
 
 Create the Jenkins pipeline file. This file must be called `Jenkinsfile` and it defines the "DevOps steps": pulling code, setting up Python, and running tests.
 
 ```groovy
-cat > Jenkinsfile << EOF
-
 pipeline {
     agent any
     environment {
         IMAGE_NAME = "python-flask-app"
         DOCKER_HUB = credentials('docker-hub-creds')
         // Change GITHUB_USERNAME & GITHUB_REPOSITORY_NAME values accordingly
-        GITHUB_USERNAME="<YOUR_GITHUB_USERNAME>"
-        GITHUB_REPOSITORY_NAME="<YOUR_REPOSITORY_NAME>"
+        GITHUB_USERNAME="mnakib"
+        GITHUB_REPOSITORY_NAME="jenkins-demo-bis"
     }
     stages {
         stage('Checkout Source') {
@@ -295,14 +286,12 @@ pipeline {
         stage('Build & Push') {
             steps {
                 sh "docker build -t ${DOCKER_HUB_USR}/${IMAGE_NAME}:latest ."
-                sh "echo $DOCKER_HUB_PSW | docker login -u $DOCKER_HUB_USR --password-stdin"
+                sh "echo ${DOCKER_HUB_PSW} | docker login -u ${DOCKER_HUB_USR} --password-stdin"
                 sh "docker push ${DOCKER_HUB_USR}/${IMAGE_NAME}:latest"
             }
         }
     }
 }
-
-EOF
 ```
 
 ### 0.7 Commit and push to GitHub
@@ -352,8 +341,11 @@ So that Jenkins is able to push images to an image registry, like Docker Hub, Am
 * Select **Pipeline** and click OK.
 4. **Connect GitHub:**
 * Scroll to the **Pipeline** section.
-* Change "Definition" to **Pipeline script**.
-* In the **script** section, copy and paste the Jenkinsfile file content.
+* Change **Definition** to **Pipeline script from SCM**.
+* Change **SCM** to **Git**.
+* Enter your GitHub URL in **Repository URL**.
+* Ensure the branch is correct (usually `*/main`).
+* Verify the Script Path field displays `Jenkinsfile`.
 * Click **Save**.
 
 
@@ -399,102 +391,92 @@ curl localhost:5000
 
 
 
+Updated the Jenkinsfile to add a step to deploy the image to an OpenShift cluster. 
 
-
----
-application and pushing it to an image registry, we will need both Python and Docker installed in the image.
-
-cat > Containerfile
-
-```dockerfile
-# Start from the standard Jenkins LTS image
-FROM jenkins/jenkins:lts
-
-# Switch to root user to install software
-USER root
-
-# Install Python 3 and pip
-RUN apt-get update && \
-    apt-get install -y python3 python3-pip python3-venv docker.io zip && \
-    rm -rf /var/lib/apt/lists/*
-
-# Switch back to the standard jenkins user
-USER jenkins
-```
-
-Create the image
-
-```bash
-podman build -t python-jenkins .
-```
-
-Run the container by mounting the Podman socket when you start Jenkins, using the `-v /run/user/$(id -u)/podman/podman.sock:/var/run/docker.sock` parameter
-
-```bash
-# This allows the Jenkins container to 'borrow' your computer's Podman engine
-podman run -d \
-  --name jenkins-python \
-  -p 8080:8080 \
-  -v /run/user/$(id -u)/podman/podman.sock:/var/run/docker.sock \
-  -v jenkins_home:/var/jenkins_home \
-  python-jenkins
-```
-
-Display the container logs and scroll down to get the Jenkins GUI Web console password
-
-```bash
-podman logs jenkins-python
-```
-
-```text
-*************************************************************
-Jenkins initial setup is required. An admin user has been created and a password generated.
-Please use the following password to proceed to installation:
-
-[32-CHARACTER-CODE-HERE]
-
-This may also be found at: /var/jenkins_home/secrets/initialAdminPassword
-*************************************************************
+```groovy
+        stage('Deploy to OpenShift') {
+            steps {
+                script {
+                    // Define your target namespace and deployment name
+                    def NAMESPACE_NAME = "default"
+                    def DEPLOYMENT_NAME = "python-flask-app"
+                    // Login, create the namespace if doesn't exist then swith to it
+                    // create the app if it doesn't exist, or update the image if it does
+                    sh """
+                    oc login ${OCP_API} -u ${OCP_USER} -p ${OCP_PASS} --insecure-skip-tls-verify   
+                    oc new-project ${NAMESPACE_NAME} || echo "Namespace already exists"
+                    oc project ${NAMESPACE_NAME}
+                    oc create deployment ${DEPLOYMENT_NAME} --image ${IMAGE_PATH} --namespace=${NAMESPACE_NAME} || oc patch deployment/${IMAGE_NAME} -p '{"spec":{"template":{"spec":{"containers":[{"name":"${IMAGE_NAME}","image":"${IMAGE_PATH}"}]}}}}'
+                    # Expose the deployment
+                    oc expose deployment ${DEPLOYMENT_NAME} --target-port 5000 --port 80 --namespace=${NAMESPACE_NAME}
+                    # Expose the deployment
+                    oc expose svc/${IMAGE_NAME} --namespace=${NAMESPACE_NAME} || echo "Route already exists" 
+                    """
+                }
+            }
+        }
 ```
 
 
-### Create Dockerfile.app (In GitHub)
-
-Create "blueprint" for your application artifact.
-
-### Create the Jenkinsfile
+The complete file would look like this
 
 ```groovy
 pipeline {
     agent any
     environment {
-        // Replace with your Docker Hub username
-        DOCKER_HUB_USER = 'your-username'
-        IMAGE_NAME = "python-jenkins-demo"
-        REGISTRY_CREDENTIALS_ID = 'docker-hub-login' 
+        IMAGE_NAME = "python-flask-app"
+        DOCKER_HUB = credentials('docker-hub-creds')
+        // Change GITHUB_USERNAME & GITHUB_REPOSITORY_NAME values accordingly
+        GITHUB_USERNAME="mnakib"
+        GITHUB_REPOSITORY_NAME="jenkins-demo-bis"
+        OCP_API = "https://api.ocp4.example.com:6443"
+        OCP_USER = "admin"
+        OCP_PASS = "redhatocp"
+        IMAGE_PATH = "docker.io/mouradn81/python-flask-app:latest"
     }
     stages {
+        stage('Checkout Source') {
+            steps {
+                // Pull the code from your repository
+                git branch: 'main', url: "https://github.com/${GITHUB_USERNAME}/${GITHUB_REPOSITORY_NAME}.git"
+            }
+        }
         stage('Build & Test') {
             steps {
-                sh 'python3 app.py'
+                // Instead of docker.inside, we run a container manually
+                sh '''
+                    docker run --rm -v $(pwd):/app -w /app python:3.9-slim bash -c "
+                        pip install flask pytest && 
+                        pytest
+                    "
+                '''
             }
         }
-        stage('Create Docker Artifact') {
+        stage('Build & Push') {
             steps {
-                script {
-                    // Build the image using the Dockerfile in the repo
-                    appImage = docker.build("${DOCKER_HUB_USER}/${IMAGE_NAME}:${env.BUILD_NUMBER}")
-                }
+                sh "docker build -t ${DOCKER_HUB_USR}/${IMAGE_NAME}:latest ."
+                sh "echo ${DOCKER_HUB_PSW} | docker login -u ${DOCKER_HUB_USR} --password-stdin"
+                sh "docker push ${DOCKER_HUB_USR}/${IMAGE_NAME}:latest"
             }
         }
-        stage('Push to Registry') {
+        stage('Deploy to OpenShift') {
             steps {
                 script {
-                    // Use credentials stored in Jenkins to log in and push
-                    docker.withRegistry('', REGISTRY_CREDENTIALS_ID) {
-                        appImage.push()
-                        appImage.push('latest')
-                    }
+                    // Define your target namespace and deployment name
+                    def NAMESPACE_NAME = "default"
+                    def DEPLOYMENT_NAME = "python-flask-app"
+                    // Login, create the namespace if doesn't exist then swith to it
+                    // create the app if it doesn't exist, or update the image if it does
+                    sh """
+                    oc login ${OCP_API} -u ${OCP_USER} -p ${OCP_PASS} --insecure-skip-tls-verify   
+                    oc new-project ${NAMESPACE_NAME} || echo "Namespace already exists"
+                    oc project ${NAMESPACE_NAME}
+                    oc create deployment ${DEPLOYMENT_NAME} --image ${IMAGE_PATH} --namespace=${NAMESPACE_NAME} || oc patch deployment/${IMAGE_NAME} -p '{"spec":{"template":{"spec":{"containers":[{"name":"${IMAGE_NAME}","image":"${IMAGE_PATH}"}]}}}}'
+                    # Expose the deployment
+                    oc expose deployment ${DEPLOYMENT_NAME} --target-port 5000 --port 80 --namespace=${NAMESPACE_NAME}
+                    # Expose the deployment
+                    oc expose svc/${IMAGE_NAME} --namespace=${NAMESPACE_NAME} || echo "Route already exists" 
+                    """
                 }
             }
         }
@@ -509,31 +491,136 @@ pipeline {
 
 
 
+## DevSecOps Pipeline
+
+
+
+### Integrate Jenkins with SonarQube
+
+You need to authenticate Jenkins against SonarQube, by generating a token in SonarQube then adding it to Jenkins.
+
+1. **Generate the Token in SonarQube:**
+* Log into SonarQube (`localhost:9000`).
+* Go to **My Account** > **Security**.
+* Give the token a name (e.g., "Jenkins-Scanner") and click **Generate**.
+* **Copy this token immediately** (you won't see it again).
+
+
+2. **Add it to Jenkins:**
+* Go to your Jenkins Dashboard.
+* Click **Manage Jenkins** > **Credentials**.
+* Click on the **(global)** domain.
+* Click **Add Credentials** on the top right.
+* **Kind:** Select **Secret text**.
+* **Secret:** Paste the token you copied from SonarQube.
+* **ID:** Enter `sonar-token` (This **must** match the name in your pipeline code).
+* Click **Create**.
 
 
 
 
+```groovy
+pipeline {
+    agent any
+    environment {
+        IMAGE_NAME = "python-flask-app"
+        DOCKER_HUB = credentials('docker-hub-creds')
+        // Change GITHUB_USERNAME & GITHUB_REPOSITORY_NAME values accordingly
+        GITHUB_USERNAME="mnakib"
+        GITHUB_REPOSITORY_NAME="jenkins-demo-bis"
+        OCP_API = "https://api.ocp4.example.com:6443"
+        OCP_USER = "admin"
+        OCP_PASS = "redhatocp"
+        IMAGE_PATH = "docker.io/mouradn81/python-flask-app:latest"
+        // Security Tool Configs (Examples)
+        SONAR_TOKEN = credentials('sonar-token')
+        SONAR_HOST  = "http://your-sonar-server:9000"
+    }
+    stages {
+        stage('Checkout Source') {
+            steps {
+                git branch: 'main', url: "https://github.com/${GITHUB_USERNAME}/${GITHUB_REPOSITORY_NAME}.git"
+            }
+        }
 
+        // --- DEVSECOPS START: SAST & SCA ---
+        stage('SAST & SCA Scans') {
+            steps {
+                script {
+                    // 1. SAST (Static Code Analysis)
+                    // If Sonar finds issues above your threshold, the 'exit 1' will fail the build
+                    sh """
+                        docker run --rm --network host \
+                        -v \$(pwd):/usr/src sonarsource/sonar-scanner-cli \
+                        -Dsonar.projectKey=${IMAGE_NAME} \
+                        -Dsonar.sources=. \
+                        -Dsonar.host.url=${SONAR_HOST} \
+                        -Dsonar.login=${SONAR_TOKEN}
+                    """
 
-### 3.2 Configure the Pipeline
+                    // 2. SCA (Software Composition Analysis)
+                    // --failOnCVSS 7 ensures the build fails if a High/Critical vulnerability is found
+                    sh """
+                        docker run --rm -v \$(pwd):/src -v \$(pwd)/odc-reports:/report \
+                        owasp/dependency-check --project "Flask-App" --scan /src \
+                        --format "ALL" --out /report --failOnCVSS 7
+                    """
+                }
+            }
+        }
+        // --- DEVSECOPS END ---
 
-1. **Open Jenkins:** Go to `http://localhost:8080` in your browser.
-2. **Unlock:** Paste the password from the logs and select **"Install Suggested Plugins."**
-3. **Create Job:** * Click **New Item**.
-* Enter name: `Python-App-Pipeline`.
-* Select **Pipeline** and click OK.
-4. **Connect GitHub:**
-* Scroll to the **Pipeline** section.
-* Change "Definition" to **Pipeline script from SCM**.
-* Select **Git**.
-* Paste your **GitHub Repository URL**.
-* Ensure the branch is correct (usually `*/main`).
-* Click **Save**.
+        stage('Build & Test') {
+            steps {
+                sh '''
+                    docker run --rm -v $(pwd):/app -w /app python:3.9-slim bash -c "
+                        pip install flask pytest && 
+                        pytest
+                    "
+                '''
+            }
+        }
+        stage('Build & Push') {
+            steps {
+                sh "docker build -t ${DOCKER_HUB_USR}/${IMAGE_NAME}:latest ."
+                sh "echo $DOCKER_HUB_PSW | docker login -u $DOCKER_HUB_USR --password-stdin"
+                sh "docker push ${DOCKER_HUB_USR}/${IMAGE_NAME}:latest"
+            }
+        }
+        stage('Deploy to OpenShift') {
+            steps {
+                script {
+                    def NAMESPACE_NAME = "python-flask-ns"
+                    def DEPLOYMENT_NAME = "python-flask-app"
+                    sh """
+                    oc login ${OCP_API} -u ${OCP_USER} -p ${OCP_PASS} --insecure-skip-tls-verify   
+                    oc new-project ${NAMESPACE_NAME} || echo "Namespace already exists"
+                    oc project ${NAMESPACE_NAME}
+                    oc create deployment ${DEPLOYMENT_NAME} --image ${IMAGE_PATH} --namespace=${NAMESPACE_NAME} || oc patch deployment/${IMAGE_NAME} -p '{"spec":{"template":{"spec":{"containers":[{"name":"${IMAGE_NAME}","image":"${IMAGE_PATH}"}]}}}}'
+                    oc expose deployment ${DEPLOYMENT_NAME} --target-port 5000 --port 80 --namespace=${NAMESPACE_NAME}
+                    oc expose svc/${IMAGE_NAME} --namespace=${NAMESPACE_NAME} || echo "Route already exists" 
+                    """
+                }
+            }
+        }
 
-
-
-
-
+        // --- DEVSECOPS START: DAST ---
+        stage('DAST Scan') {
+            steps {
+                script {
+                    // We get the route URL from OpenShift to scan it
+                    def APP_URL = sh(script: "oc get route ${IMAGE_NAME} -n python-flask-ns -o jsonpath='{.spec.host}'", returnStdout: true).trim()
+                    
+                    // Run OWASP ZAP Baseline scan. 
+                    // The '-c' flag can point to a config file to fail the build on specific alerts.
+                    sh "docker run --rm -t owasp/zap2docker-stable zap-baseline.py -t http://${APP_URL}"
+                }
+            }
+        }
+        // --- DEVSECOPS END ---
+    }
+}
+```
 
 
 
