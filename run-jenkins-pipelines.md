@@ -29,7 +29,7 @@ sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin d
 ```
 ```bash
 # Add your user to the docker group. This allows you to run Docker command without needins sudo.
-sudo usermod -aG docker ${whoami}
+sudo usermod -aG docker $(whoami)
 
 # Run the newgrp command to change the current active user group (effective GID) within a session.
 newgrp docker
@@ -40,7 +40,7 @@ sudo systemctl enable --now docker
 ```
 ```bash
 # Run a test container
-sudo docker run hello-world
+docker run hello-world
 ```
 
 
