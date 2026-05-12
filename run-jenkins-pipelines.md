@@ -18,7 +18,7 @@ sudo dnf remove docker \
     docker-logrotate \
     docker-engine \
     podman \
-    runc
+    runc -y
 ```
 ```bash
 sudo dnf -y install dnf-plugins-core
