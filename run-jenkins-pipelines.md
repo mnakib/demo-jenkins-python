@@ -71,7 +71,7 @@ sudo dnf install fontconfig java-21-openjdk -y
 ```
 
     > Run `java -version`. If it still shows an older version (like Java 11 or 17), you may need to update the system default by running the `sudo update-alternatives --config java` command and choose the appropriate version, which is in this case version 21.
-```
+
 
 Install Jenkins
 
