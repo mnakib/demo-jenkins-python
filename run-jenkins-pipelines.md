@@ -21,11 +21,11 @@ sudo dnf remove -y docker \
     runc
 ```
 ```bash
-sudo dnf -y install dnf-plugins-core
+sudo dnf install -y dnf-plugins-core
 sudo dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
 ```
 ```bash
-sudo dnf install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 ```bash
 # Add the jenkins user to the docker group. This allows it to run Docker command without needins sudo.
