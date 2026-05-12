@@ -34,8 +34,6 @@ sudo usermod -aG docker ${whoami}
 # Run the newgrp command to change the current active user group (effective GID) within a session.
 newgrp docker
 
-
-
 # Sometimes the socket itself needs a permissions nudge to recognize the new group membership immediately
 sudo chmod 666 /var/run/docker.sock
 ```
